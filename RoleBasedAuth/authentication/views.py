@@ -29,5 +29,5 @@ def login_user(request):
 
 @api_view(['GET'])
 @permission_classes([IsMentor])
-def good_boy(request):
-    return Response("Good boy", status=status.HTTP_200_OK)
+def hello_world(request):
+    return Response("Hello World", status=status.HTTP_200_OK)
