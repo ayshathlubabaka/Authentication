@@ -1,11 +1,15 @@
-from django.contrib.auth import authenticate
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
-from .serializers import UserRegistrationSerializer, LoginSerializer
-from main.management.commands.create_groups_and_permissions import IsCompanion, IsMentor
+
+from .serializers import (
+    UserRegistrationSerializer,
+    LoginSerializer,
+    VerifyAccountSerializer,
+)
+from .emails import send_otp_via_email
+from .models import CustomUser
+
 
 @api_view(['POST'])
 def register_user(request):
@@ -13,7 +17,43 @@ def register_user(request):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            return Response(f"Account created successfully with details {serializer.data}", status=status.HTTP_201_CREATED)
+
+            # Send verification email with OTP
+            send_otp_via_email(user.email)
+
+            return Response(
+                {"message": "Registration successful. Check your email for OTP."},
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+@api_view(['POST'])
+def verify_otp(request):
+    if request.method == 'POST':
+        serializer = VerifyAccountSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            otp = serializer.validated_data['otp']
+
+            user = CustomUser.objects.get(email=email)
+            if user.otp != otp:
+                return Response(
+                    {"error": "Invalid OTP."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Activate user account
+            user.is_registered = True
+            user.is_verified = True
+            user.save()
+
+            return Response(
+                {"message": "Account verified successfully."},
+                status=status.HTTP_200_OK
+            )
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -26,8 +66,3 @@ def login_user(request):
             return Response(serializer.validated_data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_401_UNAUTHORIZED)
     
-
-@api_view(['GET'])
-@permission_classes([IsMentor])
-def hello_world(request):
-    return Response("Hello World", status=status.HTTP_200_OK)

@@ -1,9 +1,10 @@
 from rest_framework import serializers
-from .models import CustomUser, Role
+from .models import CustomUser
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.models import update_last_login
 from django.contrib.auth import authenticate
-from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
+
 
 class UserSerializer(serializers.ModelSerializer):
 
@@ -22,20 +23,29 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password')
         firstname = validated_data.pop('firstname')
         lastname = validated_data.pop('lastname')
+        roles = validated_data.pop('roles', [])
 
         user = CustomUser.objects.create_user(
             email=validated_data['email'],
             firstname=firstname,
             lastname=lastname,
-            password=password
+            password=password,
         )
+        for role in roles:
+            user.roles.add(role)
 
-        # Assign only 'companion' and 'mentor' roles
-        companion_role, _ = Role.objects.get_or_create(name='companion')
-        mentor_role, _ = Role.objects.get_or_create(name='mentor')
-        user.roles.add(companion_role, mentor_role)
+        user.save()
         return user
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        # Convert the roles from a list of Role objects to a list of role names
+        representation['roles'] = [role.name for role in instance.roles.all()]
+        return representation
 
+class VerifyAccountSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField()
 
 class LoginSerializer(TokenObtainPairSerializer):
     role = serializers.CharField()
@@ -46,11 +56,14 @@ class LoginSerializer(TokenObtainPairSerializer):
         role = attrs.get('role')
 
         if not email or not password or not role:
-            raise serializers.ValidationError("Must include 'email', 'password', and 'role'.")
+            raise serializers.ValidationError(_("Must include 'email', 'password', and 'role'."))
 
         user = authenticate(email=email, password=password)
 
         if user:
+            if not user.is_registered or not user.is_verified:
+                raise serializers.ValidationError(_("Account is not registered or verified."))
+
             if role == 'mentor' and user.roles.filter(name='mentor').exists():
                 refresh = self.get_token(user)
                 data = {
@@ -60,8 +73,8 @@ class LoginSerializer(TokenObtainPairSerializer):
                         'email': user.email,
                         'firstname': user.firstname,
                         'lastname': user.lastname,
-                        'is_superuser' : user.is_superuser,
-                        'date_joined' : user.date_joined,
+                        'is_superuser': user.is_superuser,
+                        'date_joined': user.date_joined,
                         'role': 'mentor'
                     }
                 }
@@ -75,15 +88,30 @@ class LoginSerializer(TokenObtainPairSerializer):
                         'email': user.email,
                         'firstname': user.firstname,
                         'lastname': user.lastname,
-                        'is_superuser' : user.is_superuser,
-                        'date_joined' : user.date_joined,
+                        'is_superuser': user.is_superuser,
+                        'date_joined': user.date_joined,
                         'role': 'companion'
                     }
                 }
                 update_last_login(None, user)
-
+                return data
+            elif role == 'hr' and user.roles.filter(name='hr').exists():
+                refresh = self.get_token(user)
+                data = {
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': {
+                        'email': user.email,
+                        'firstname': user.firstname,
+                        'lastname': user.lastname,
+                        'is_superuser': user.is_superuser,
+                        'date_joined': user.date_joined,
+                        'role': 'hr'
+                    }
+                }
+                update_last_login(None, user)
                 return data
             else:
-                raise serializers.ValidationError("Invalid role or unauthorized.")
+                raise serializers.ValidationError(_("Invalid role or unauthorized."))
         else:
-            raise serializers.ValidationError("No active account found with the given credentials.")
+            raise serializers.ValidationError(_("No active account found with the given credentials."))

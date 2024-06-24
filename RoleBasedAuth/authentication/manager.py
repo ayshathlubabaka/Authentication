@@ -16,11 +16,6 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault('is_registered', True)
         extra_fields.setdefault('is_verified', True)
 
-        if extra_fields.get('is_staff') is not True:
-            raise ValueError('Superuser must have is_staff=True.')
-        if extra_fields.get('is_superuser') is not True:
-            raise ValueError('Superuser must have is_superuser=True.')
-
         user = self.create_user(email, firstname, lastname, password, **extra_fields)
         return user
 

@@ -9,6 +9,7 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         Role.objects.get_or_create(name='companion')
         Role.objects.get_or_create(name='mentor')
+        Role.objects.get_or_create(name='hr')
         self.stdout.write(self.style.SUCCESS('Roles created successfully'))
 
 
@@ -19,3 +20,7 @@ class IsMentor(BasePermission):
 class IsCompanion(BasePermission):
     def has_permission(self, request, view):
         return request.user.roles.filter(name='companion').exists()
+
+class IsHr(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.roles.filter(name='hr').exists()
